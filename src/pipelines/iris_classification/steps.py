@@ -52,6 +52,11 @@ def train_test_split(
     pd.DataFrame(y_train).to_csv(y_train_output.path, index=False)
     pd.DataFrame(y_test).to_csv(y_test_output.path, index=False)
 
+    print(x_train_output.path)
+    print(x_test_output.path)
+    print(y_train_output.path)
+    print(y_test_output.path)
+
     print("Train-test split completed successfully")
 
 
@@ -97,6 +102,7 @@ def evaluate_model(
     y_test: Input[Dataset],
     metrics: Output[Metrics],
 ):
+    import joblib
     import pandas as pd
     import numpy as np
     import pickle
@@ -105,8 +111,7 @@ def evaluate_model(
     import os
     
     # Load the model and data
-    with open(model.path, "rb") as f:
-        clf = pickle.load(f)
+    clf = joblib.load(model.path)
     
     x_test_df = pd.read_csv(x_test.path)
     y_test_df = pd.read_csv(y_test.path)

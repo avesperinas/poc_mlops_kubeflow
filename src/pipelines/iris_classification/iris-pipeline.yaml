@@ -111,11 +111,11 @@ deploymentSpec:
         - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
           \ *\n\ndef evaluate_model(\n    model: Input[Model],\n    x_test: Input[Dataset],\n\
           \    y_test: Input[Dataset],\n    metrics: Output[Metrics],\n):\n    import\
-          \ pandas as pd\n    import numpy as np\n    import pickle\n    from sklearn.metrics\
-          \ import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix\n\
-          \    from sklearn.metrics import classification_report, roc_curve, auc\n\
-          \    import os\n\n    # Load the model and data\n    with open(model.path,\
-          \ \"rb\") as f:\n        clf = pickle.load(f)\n\n    x_test_df = pd.read_csv(x_test.path)\n\
+          \ joblib\n    import pandas as pd\n    import numpy as np\n    import pickle\n\
+          \    from sklearn.metrics import accuracy_score, precision_score, recall_score,\
+          \ f1_score, confusion_matrix\n    from sklearn.metrics import classification_report,\
+          \ roc_curve, auc\n    import os\n\n    # Load the model and data\n    clf\
+          \ = joblib.load(model.path)\n\n    x_test_df = pd.read_csv(x_test.path)\n\
           \    y_test_df = pd.read_csv(y_test.path)\n    y_true = y_test_df.iloc[:,\
           \ 0].values\n\n    # Make predictions and calculate metrics\n    y_pred\
           \ = clf.predict(x_test_df)\n    y_pred_proba = clf.predict_proba(x_test_df)\n\
@@ -200,8 +200,9 @@ deploymentSpec:
           \n    # Save the datasets as artifacts\n    x_train.to_csv(x_train_output.path,\
           \ index=False)\n    x_test.to_csv(x_test_output.path, index=False)\n   \
           \ pd.DataFrame(y_train).to_csv(y_train_output.path, index=False)\n    pd.DataFrame(y_test).to_csv(y_test_output.path,\
-          \ index=False)\n\n    print(\"Train-test split completed successfully\"\
-          )\n\n"
+          \ index=False)\n\n    print(x_train_output.path)\n    print(x_test_output.path)\n\
+          \    print(y_train_output.path)\n    print(y_test_output.path)\n\n    print(\"\
+          Train-test split completed successfully\")\n\n"
         image: python:3.9
     exec-training-basic-classifier:
       container:
