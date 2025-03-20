@@ -63,5 +63,4 @@ kfp_client = kfp.Client(
 run = kfp_client.create_run_from_pipeline_package(
     pipeline_definition_path,
     experiment_name='iris-classification-experiment',
-    enable_caching=False,
 )

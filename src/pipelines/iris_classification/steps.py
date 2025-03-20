@@ -52,11 +52,6 @@ def train_test_split(
     pd.DataFrame(y_train).to_csv(y_train_output.path, index=False)
     pd.DataFrame(y_test).to_csv(y_test_output.path, index=False)
 
-    print(x_train_output.path)
-    print(x_test_output.path)
-    print(y_train_output.path)
-    print(y_test_output.path)
-
     print("Train-test split completed successfully")
 
 
