@@ -2,6 +2,28 @@
 # Name: iris-pipeline
 # Description: A simple pipeline to classify Iris flowers.
 components:
+  comp-evaluate-model:
+    executorLabel: exec-evaluate-model
+    inputDefinitions:
+      artifacts:
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+        x_test:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        y_test:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
   comp-prepare-data:
     executorLabel: exec-prepare-data
     outputDefinitions:
@@ -60,6 +82,52 @@ components:
             schemaVersion: 0.0.1
 deploymentSpec:
   executors:
+    exec-evaluate-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - evaluate_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.12.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef evaluate_model(\n    model: Input[Model],\n    x_test: Input[Dataset],\n\
+          \    y_test: Input[Dataset],\n    metrics: Output[Metrics],\n):\n    import\
+          \ pandas as pd\n    import numpy as np\n    import pickle\n    from sklearn.metrics\
+          \ import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix\n\
+          \    from sklearn.metrics import classification_report, roc_curve, auc\n\
+          \    import os\n\n    # Load the model and data\n    with open(model.path,\
+          \ \"rb\") as f:\n        clf = pickle.load(f)\n\n    x_test_df = pd.read_csv(x_test.path)\n\
+          \    y_test_df = pd.read_csv(y_test.path)\n    y_true = y_test_df.iloc[:,\
+          \ 0].values\n\n    # Make predictions and calculate metrics\n    y_pred\
+          \ = clf.predict(x_test_df)\n    y_pred_proba = clf.predict_proba(x_test_df)\n\
+          \n    accuracy = accuracy_score(y_true, y_pred)\n    precision = precision_score(y_true,\
+          \ y_pred, average='weighted')\n    recall = recall_score(y_true, y_pred,\
+          \ average='weighted')\n    f1 = f1_score(y_true, y_pred, average='weighted')\n\
+          \n    # Save metrics to output\n    metrics_dict = {\n        \"accuracy\"\
+          : float(accuracy),\n        \"precision\": float(precision),\n        \"\
+          recall\": float(recall),\n        \"f1_score\": float(f1)\n    }\n    metrics.log_metrics(metrics_dict)\n\
+          \n    print(f\"Model evaluation completed successfully with accuracy: {accuracy:.4f}\"\
+          )\n\n"
+        image: python:3.9
     exec-prepare-data:
       container:
         args:
@@ -181,6 +249,30 @@ pipelineInfo:
 root:
   dag:
     tasks:
+      evaluate-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-evaluate-model
+        dependentTasks:
+        - train-test-split
+        - training-basic-classifier
+        inputs:
+          artifacts:
+            model:
+              taskOutputArtifact:
+                outputArtifactKey: model_output
+                producerTask: training-basic-classifier
+            x_test:
+              taskOutputArtifact:
+                outputArtifactKey: x_test_output
+                producerTask: train-test-split
+            y_test:
+              taskOutputArtifact:
+                outputArtifactKey: y_test_output
+                producerTask: train-test-split
+        taskInfo:
+          name: evaluate-model
       prepare-data:
         cachingOptions:
           enableCache: true

@@ -85,3 +85,49 @@ def training_basic_classifier(
     metrics_output.log_metric("train_accuracy", train_score)
 
     print(f"Model trained with training accuracy: {train_score}")
+
+
+@component(
+    packages_to_install=["pandas", "scikit-learn"],
+    base_image="python:3.9",
+)
+def evaluate_model(
+    model: Input[Model],
+    x_test: Input[Dataset],
+    y_test: Input[Dataset],
+    metrics: Output[Metrics],
+):
+    import pandas as pd
+    import numpy as np
+    import pickle
+    from sklearn.metrics import accuracy_score, precision_score, recall_score, f1_score, confusion_matrix
+    from sklearn.metrics import classification_report, roc_curve, auc
+    import os
+    
+    # Load the model and data
+    with open(model.path, "rb") as f:
+        clf = pickle.load(f)
+    
+    x_test_df = pd.read_csv(x_test.path)
+    y_test_df = pd.read_csv(y_test.path)
+    y_true = y_test_df.iloc[:, 0].values
+    
+    # Make predictions and calculate metrics
+    y_pred = clf.predict(x_test_df)
+    y_pred_proba = clf.predict_proba(x_test_df)
+    
+    accuracy = accuracy_score(y_true, y_pred)
+    precision = precision_score(y_true, y_pred, average='weighted')
+    recall = recall_score(y_true, y_pred, average='weighted')
+    f1 = f1_score(y_true, y_pred, average='weighted')
+    
+    # Save metrics to output
+    metrics_dict = {
+        "accuracy": float(accuracy),
+        "precision": float(precision),
+        "recall": float(recall),
+        "f1_score": float(f1)
+    }
+    metrics.log_metrics(metrics_dict)
+
+    print(f"Model evaluation completed successfully with accuracy: {accuracy:.4f}")

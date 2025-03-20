@@ -12,6 +12,7 @@ from src.pipelines.iris_classification.steps import (
     prepare_data,
     train_test_split,
     training_basic_classifier,
+    evaluate_model,
 )
 
 
@@ -24,6 +25,7 @@ pipeline_definition_path = str(current_module_path / f"{pipeline_name}.yaml")
 @pipeline(
     name=pipeline_name,
     description="A simple pipeline to classify Iris flowers.",
+    pipeline_root="https://minio-console.deploykf.example.com:8443/browser/kubeflow-pipelines",
 )
 def iris_pipeline():
     
@@ -36,6 +38,11 @@ def iris_pipeline():
     training_basic_classifier_task = training_basic_classifier(
         x_train_input=train_test_split_task.outputs["x_train_output"],
         y_train_input=train_test_split_task.outputs["y_train_output"],
+    )
+    evaluate_model(
+        model=training_basic_classifier_task.outputs["model_output"],
+        x_test=train_test_split_task.outputs["x_test_output"],
+        y_test=train_test_split_task.outputs["y_test_output"],
     )
 
 # Compile the pipeline
@@ -56,6 +63,5 @@ kfp_client = kfp.Client(
 run = kfp_client.create_run_from_pipeline_package(
     pipeline_definition_path,
     experiment_name='iris-classification-experiment',
-    # enable_caching=True,
-    enable_caching=True,
+    enable_caching=False,
 )
