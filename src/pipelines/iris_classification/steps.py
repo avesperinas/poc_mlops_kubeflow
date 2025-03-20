@@ -133,6 +133,7 @@ def evaluate_model(
         "recall": float(recall),
         "f1_score": float(f1)
     }
-    metrics.log_metrics(metrics_dict)
+    for metric, value in metrics_dict.items():
+        metrics.log_metric(metric, value) 
 
     print(f"Model evaluation completed successfully with accuracy: {accuracy:.4f}")

@@ -124,9 +124,10 @@ deploymentSpec:
           \ average='weighted')\n    f1 = f1_score(y_true, y_pred, average='weighted')\n\
           \n    # Save metrics to output\n    metrics_dict = {\n        \"accuracy\"\
           : float(accuracy),\n        \"precision\": float(precision),\n        \"\
-          recall\": float(recall),\n        \"f1_score\": float(f1)\n    }\n    metrics.log_metrics(metrics_dict)\n\
-          \n    print(f\"Model evaluation completed successfully with accuracy: {accuracy:.4f}\"\
-          )\n\n"
+          recall\": float(recall),\n        \"f1_score\": float(f1)\n    }\n    for\
+          \ metric, value in metrics_dict.items():\n        metrics.log_metric(metric,\
+          \ value) \n\n    print(f\"Model evaluation completed successfully with accuracy:\
+          \ {accuracy:.4f}\")\n\n"
         image: python:3.9
     exec-prepare-data:
       container:

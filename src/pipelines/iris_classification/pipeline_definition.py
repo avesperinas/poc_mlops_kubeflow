@@ -38,7 +38,7 @@ def iris_pipeline():
         x_train_input=train_test_split_task.outputs["x_train_output"],
         y_train_input=train_test_split_task.outputs["y_train_output"],
     )
-    
+
     evaluate_model(
         model=training_basic_classifier_task.outputs["model_output"],
         x_test=train_test_split_task.outputs["x_test_output"],
