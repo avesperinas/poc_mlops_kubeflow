@@ -1,0 +1,515 @@
+# PIPELINE DEFINITION
+# Name: iris-pipeline-tensorboard
+# Description: A simple pipeline to classify Iris flowers with TensorBoard integration.
+components:
+  comp-evaluate-model:
+    executorLabel: exec-evaluate-model
+    inputDefinitions:
+      artifacts:
+        model:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+        tensorboard_log:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        x_test:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        y_test:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        classification_metrics:
+          artifactType:
+            schemaTitle: system.ClassificationMetrics
+            schemaVersion: 0.0.1
+        metrics:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+  comp-prepare-data:
+    executorLabel: exec-prepare-data
+    outputDefinitions:
+      artifacts:
+        output_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-prepare-tensorboard-logs:
+    executorLabel: exec-prepare-tensorboard-logs
+    outputDefinitions:
+      artifacts:
+        tensorboard_log:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+  comp-train-test-split:
+    executorLabel: exec-train-test-split
+    inputDefinitions:
+      artifacts:
+        input_data:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        metrics_output:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+        x_test_output:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        x_train_output:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        y_test_output:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        y_train_output:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+  comp-training-basic-classifier:
+    executorLabel: exec-training-basic-classifier
+    inputDefinitions:
+      artifacts:
+        tensorboard_log:
+          artifactType:
+            schemaTitle: system.Artifact
+            schemaVersion: 0.0.1
+        x_train_input:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+        y_train_input:
+          artifactType:
+            schemaTitle: system.Dataset
+            schemaVersion: 0.0.1
+    outputDefinitions:
+      artifacts:
+        metrics_output:
+          artifactType:
+            schemaTitle: system.Metrics
+            schemaVersion: 0.0.1
+        model_output:
+          artifactType:
+            schemaTitle: system.Model
+            schemaVersion: 0.0.1
+deploymentSpec:
+  executors:
+    exec-evaluate-model:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - evaluate_model
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.12.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'matplotlib' 'tensorflow' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef evaluate_model(\n    model: Input[Model],\n    x_test: Input[Dataset],\n\
+          \    y_test: Input[Dataset],\n    metrics: Output[Metrics],\n    classification_metrics:\
+          \ Output[ClassificationMetrics],\n    tensorboard_log: Input[Artifact]\n\
+          ):\n    import joblib\n    import pandas as pd\n    import numpy as np\n\
+          \    import os\n    import matplotlib.pyplot as plt\n    import tensorflow\
+          \ as tf\n    from datetime import datetime\n    from sklearn.metrics import\
+          \ (\n        accuracy_score, precision_score, recall_score, f1_score, confusion_matrix,\n\
+          \        classification_report, roc_curve, auc, precision_recall_curve,\
+          \ average_precision_score\n    )\n\n    # Configure TensorBoard\n    log_dir\
+          \ = os.path.join(tensorboard_log.path, f\"eval-{datetime.now().strftime('%Y%m%d-%H%M%S')}\"\
+          )\n    os.makedirs(log_dir, exist_ok=True)\n    file_writer = tf.summary.create_file_writer(log_dir)\n\
+          \n    # Load the model and data\n    clf = joblib.load(model.path)\n\n \
+          \   x_test_df = pd.read_csv(x_test.path)\n    y_test_df = pd.read_csv(y_test.path)\n\
+          \    y_true = y_test_df.iloc[:, 0].values\n\n    # Make predictions\n  \
+          \  y_pred = clf.predict(x_test_df)\n    y_pred_proba = clf.predict_proba(x_test_df)\n\
+          \n    # Calculate metrics\n    accuracy = accuracy_score(y_true, y_pred)\n\
+          \    precision = precision_score(y_true, y_pred, average='weighted')\n \
+          \   recall = recall_score(y_true, y_pred, average='weighted')\n    f1 =\
+          \ f1_score(y_true, y_pred, average='weighted')\n\n    # Log metrics to Kubeflow\n\
+          \    metrics_dict = {\n        \"accuracy\": float(accuracy),\n        \"\
+          precision\": float(precision),\n        \"recall\": float(recall),\n   \
+          \     \"f1_score\": float(f1)\n    }\n\n    # Log per-class metrics\n  \
+          \  try:\n        classes = np.unique(y_true)\n        for cls in classes:\n\
+          \            cls_precision = precision_score(y_true, y_pred, labels=[cls],\
+          \ average=None)[0]\n            cls_recall = recall_score(y_true, y_pred,\
+          \ labels=[cls], average=None)[0]\n            cls_f1 = f1_score(y_true,\
+          \ y_pred, labels=[cls], average=None)[0]\n\n            metrics_dict[f\"\
+          class_{cls}_precision\"] = float(cls_precision)\n            metrics_dict[f\"\
+          class_{cls}_recall\"] = float(cls_recall)\n            metrics_dict[f\"\
+          class_{cls}_f1\"] = float(cls_f1)\n    except:\n        pass\n\n    # Add\
+          \ all metrics to Kubeflow\n    for metric, value in metrics_dict.items():\n\
+          \        metrics.log_metric(metric, value)\n\n    # Generate confusion matrix\n\
+          \    try:\n        cm = confusion_matrix(y_true, y_pred).tolist()\n    \
+          \    classification_metrics.log_confusion_matrix(\n            categories=list(map(str,\
+          \ classes)),\n            matrix=cm\n        )\n\n    except:\n        pass\n\
+          \n    # Generate ROC curve data for each class\n    # try:\n    #     for\
+          \ i, cls in enumerate(classes):\n    #         y_true_binary = (y_true ==\
+          \ cls).astype(int)\n    #         y_score = y_pred_proba[:, i]\n    #  \
+          \       fpr, tpr, thresholds = roc_curve(y_true_binary, y_score)\n    #\
+          \         roc_auc = auc(fpr, tpr)\n\n    #         classification_metrics.log_roc_curve(\n\
+          \    #             fpr=fpr.tolist(),\n    #             tpr=tpr.tolist(),\n\
+          \    #             threshold=thresholds.tolist()\n    #         )\n\n  \
+          \  #         metrics.log_metric(f\"class_{cls}_auc\", float(roc_auc))\n\n\
+          \    #         # Log to TensorBoard\n    #         with file_writer.as_default():\n\
+          \    #             # ROC curve as image\n    #             fig, ax = plt.subplots()\n\
+          \    #             ax.plot(fpr, tpr, label=f'ROC curve (AUC = {roc_auc:.2f})')\n\
+          \    #             ax.plot([0, 1], [0, 1], 'k--')\n    #             ax.set_xlim([0.0,\
+          \ 1.0])\n    #             ax.set_ylim([0.0, 1.05])\n    #             ax.set_xlabel('False\
+          \ Positive Rate')\n    #             ax.set_ylabel('True Positive Rate')\n\
+          \    #             ax.set_title(f'ROC Curve for Class {cls}')\n    #   \
+          \          ax.legend(loc=\"lower right\")\n    #             plt.tight_layout()\n\
+          \    #             fig.canvas.draw()\n    #             image = np.frombuffer(fig.canvas.tostring_rgb(),\
+          \ dtype=np.uint8)\n    #             image = image.reshape(fig.canvas.get_width_height()[::-1]\
+          \ + (3,))\n    #             image = image[np.newaxis, ...]\n\n    #   \
+          \          tf.summary.image(f\"roc_curve_class_{cls}\", image, step=0)\n\
+          \    #             plt.close(fig)\n\n    #             # Precision-Recall\
+          \ curve\n    #             precision_values, recall_values, _ = precision_recall_curve(y_true_binary,\
+          \ y_score)\n    #             ap = average_precision_score(y_true_binary,\
+          \ y_score)\n\n    #             fig, ax = plt.subplots()\n    #        \
+          \     ax.plot(recall_values, precision_values, label=f'PR curve (AP = {ap:.2f})')\n\
+          \    #             ax.set_xlim([0.0, 1.0])\n    #             ax.set_ylim([0.0,\
+          \ 1.05])\n    #             ax.set_xlabel('Recall')\n    #             ax.set_ylabel('Precision')\n\
+          \    #             ax.set_title(f'Precision-Recall Curve for Class {cls}')\n\
+          \    #             ax.legend(loc=\"lower left\")\n\n    #             plt.tight_layout()\n\
+          \    #             fig.canvas.draw()\n    #             image = np.frombuffer(fig.canvas.tostring_rgb(),\
+          \ dtype=np.uint8)\n    #             image = image.reshape(fig.canvas.get_width_height()[::-1]\
+          \ + (3,))\n    #             image = image[np.newaxis, ...]\n\n    #   \
+          \          tf.summary.image(f\"pr_curve_class_{cls}\", image, step=0)\n\
+          \    #             plt.close(fig)\n\n    #     # Visualize confusion matrix\
+          \ in TensorBoard\n    #     with file_writer.as_default():\n    #      \
+          \   cm_display = confusion_matrix(y_true, y_pred, normalize='true')\n\n\
+          \    #         fig, ax = plt.subplots(figsize=(10, 8))\n    #         cax\
+          \ = ax.matshow(cm_display, cmap='Blues')\n    #         fig.colorbar(cax)\n\
+          \n    #         ax.set_xticks(np.arange(len(classes)))\n    #         ax.set_yticks(np.arange(len(classes)))\n\
+          \    #         ax.set_xticklabels(classes)\n    #         ax.set_yticklabels(classes)\n\
+          \    #         ax.set_xlabel('Predicted')\n    #         ax.set_ylabel('True')\n\
+          \    #         ax.set_title('Normalized Confusion Matrix')\n\n    #    \
+          \     # A\xF1adir valores a la matriz\n    #         for i in range(len(classes)):\n\
+          \    #             for j in range(len(classes)):\n    #                \
+          \ ax.text(j, i, f'{cm_display[i, j]:.2f}', \n    #                     \
+          \    ha='center', va='center', \n    #                         color='white'\
+          \ if cm_display[i, j] > 0.5 else 'black')\n\n    #         plt.tight_layout()\n\
+          \    #         fig.canvas.draw()\n    #         image = np.frombuffer(fig.canvas.tostring_rgb(),\
+          \ dtype=np.uint8)\n    #         image = image.reshape(fig.canvas.get_width_height()[::-1]\
+          \ + (3,))\n    #         image = image[np.newaxis, ...]\n\n    #       \
+          \  tf.summary.image(\"confusion_matrix\", image, step=0)\n    #        \
+          \ plt.close(fig)\n\n    #         # Scalar metrics\n    #         tf.summary.scalar('test_accuracy',\
+          \ accuracy, step=0)\n    #         tf.summary.scalar('test_precision', precision,\
+          \ step=0)\n    #         tf.summary.scalar('test_recall', recall, step=0)\n\
+          \    #         tf.summary.scalar('test_f1', f1, step=0)\n\n    #       \
+          \  # Feature importance visualization\n    #         if hasattr(clf, 'coef_'):\n\
+          \    #             feature_importance = np.abs(clf.coef_[0])\n    #    \
+          \         fig, ax = plt.subplots(figsize=(10, 6))\n    #             ax.bar(x_test_df.columns,\
+          \ feature_importance)\n    #             ax.set_title('Feature Importance')\n\
+          \    #             ax.set_xlabel('Features')\n    #             ax.set_ylabel('Absolute\
+          \ Coefficient Value')\n    #             plt.xticks(rotation=45, ha='right')\n\
+          \    #             plt.tight_layout()\n\n    #             fig.canvas.draw()\n\
+          \    #             image = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)\n\
+          \    #             image = image.reshape(fig.canvas.get_width_height()[::-1]\
+          \ + (3,))\n    #             image = image[np.newaxis, ...]\n\n    #   \
+          \          tf.summary.image(\"feature_importance\", image, step=0)\n   \
+          \ #             plt.close(fig)\n\n    # except:\n    #     pass\n\n    print(f\"\
+          Model evaluation completed successfully with accuracy: {accuracy:.4f}\"\
+          )\n    print(f\"Evaluation metrics logged to TensorBoard at: {log_dir}\"\
+          )\n    print(f\"Classification report:\\n{classification_report(y_true,\
+          \ y_pred)}\")\n\n"
+        image: python:3.9
+    exec-prepare-data:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - prepare_data
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.12.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef prepare_data(output_data: Output[Dataset]):\n    import pandas\
+          \ as pd\n    from sklearn import datasets\n\n    # Load dataset\n    iris\
+          \ = datasets.load_iris()\n    df = pd.DataFrame(iris.data, columns=iris.feature_names)\n\
+          \    df['species'] = iris.target\n    df = df.dropna()\n\n    # Save DataFrame\
+          \ as CSV using the output artifact\n    df.to_csv(output_data.path, index=False)\n\
+          \n    print(f\"Data saved as artifact: {output_data.path}\")\n\n"
+        image: python:3.9
+    exec-prepare-tensorboard-logs:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - prepare_tensorboard_logs
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.12.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'tensorflow' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef prepare_tensorboard_logs(\n    tensorboard_log: Output[Artifact]\n\
+          ):\n    import os\n    import tensorflow as tf\n\n    os.makedirs(tensorboard_log.path,\
+          \ exist_ok=True)\n    print(f\"TensorBoard log directory created at: {tensorboard_log.path}\"\
+          )\n\n"
+        image: python:3.9
+    exec-train-test-split:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - train_test_split
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.12.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef train_test_split(\n    input_data: Input[Dataset],\n    x_train_output:\
+          \ Output[Dataset],\n    x_test_output: Output[Dataset],\n    y_train_output:\
+          \ Output[Dataset],\n    y_test_output: Output[Dataset],\n    metrics_output:\
+          \ Output[Metrics],\n):\n    import pandas as pd\n    from sklearn.model_selection\
+          \ import train_test_split\n\n    # Load data from the input artifact\n \
+          \   final_data = pd.read_csv(input_data.path)\n\n    target_column = 'species'\n\
+          \    x = final_data.loc[:, final_data.columns != target_column]\n    y =\
+          \ final_data[target_column]\n\n    x_train, x_test, y_train, y_test = train_test_split(x,\
+          \ y, test_size=0.3, stratify=y, random_state=47)\n\n    # Save the datasets\
+          \ as artifacts\n    x_train.to_csv(x_train_output.path, index=False)\n \
+          \   x_test.to_csv(x_test_output.path, index=False)\n    pd.DataFrame(y_train).to_csv(y_train_output.path,\
+          \ index=False)\n    pd.DataFrame(y_test).to_csv(y_test_output.path, index=False)\n\
+          \n    # Log dataset metrics\n    metrics_output.log_metric(\"total_samples\"\
+          , len(final_data))\n    metrics_output.log_metric(\"train_samples\", len(x_train))\n\
+          \    metrics_output.log_metric(\"test_samples\", len(x_test))\n\n    class_distribution\
+          \ = y.value_counts().to_dict()\n    for class_label, count in class_distribution.items():\n\
+          \        metrics_output.log_metric(f\"class_{class_label}_count\", count)\n\
+          \n    print(\"Train-test split completed successfully\")\n\n"
+        image: python:3.9
+    exec-training-basic-classifier:
+      container:
+        args:
+        - --executor_input
+        - '{{$}}'
+        - --function_to_execute
+        - training_basic_classifier
+        command:
+        - sh
+        - -c
+        - "\nif ! [ -x \"$(command -v pip)\" ]; then\n    python3 -m ensurepip ||\
+          \ python3 -m ensurepip --user || apt-get install python3-pip\nfi\n\nPIP_DISABLE_PIP_VERSION_CHECK=1\
+          \ python3 -m pip install --quiet --no-warn-script-location 'kfp==2.12.1'\
+          \ '--no-deps' 'typing-extensions>=3.7.4,<5; python_version<\"3.9\"'  &&\
+          \  python3 -m pip install --quiet --no-warn-script-location 'pandas' 'scikit-learn'\
+          \ 'joblib' 'tensorflow' 'matplotlib' && \"$0\" \"$@\"\n"
+        - sh
+        - -ec
+        - 'program_path=$(mktemp -d)
+
+
+          printf "%s" "$0" > "$program_path/ephemeral_component.py"
+
+          _KFP_RUNTIME=true python3 -m kfp.dsl.executor_main                         --component_module_path                         "$program_path/ephemeral_component.py"                         "$@"
+
+          '
+        - "\nimport kfp\nfrom kfp import dsl\nfrom kfp.dsl import *\nfrom typing import\
+          \ *\n\ndef training_basic_classifier(\n    x_train_input: Input[Dataset],\n\
+          \    y_train_input: Input[Dataset],\n    tensorboard_log: Input[Artifact],\n\
+          \    model_output: Output[Model],\n    metrics_output: Output[Metrics],\n\
+          ):\n    import pandas as pd\n    import numpy as np\n    from sklearn.linear_model\
+          \ import LogisticRegression\n    import joblib\n    import os\n    import\
+          \ tensorflow as tf\n    from datetime import datetime\n    import matplotlib.pyplot\
+          \ as plt\n\n    # Configure TensorBoard\n    try:\n        log_dir = os.path.join(tensorboard_log.path,\
+          \ datetime.now().strftime(\"%Y%m%d-%H%M%S\"))\n        os.makedirs(log_dir,\
+          \ exist_ok=True)\n        file_writer = tf.summary.create_file_writer(log_dir)\n\
+          \    except:\n        pass\n\n    # Load training data\n    x_train = pd.read_csv(x_train_input.path)\n\
+          \    y_train = pd.read_csv(y_train_input.path).iloc[:, 0]\n\n    # Train\
+          \ the model with multiple iterations to track progress\n    classifier =\
+          \ LogisticRegression(max_iter=500, solver='saga', C=1.0)\n\n    for i in\
+          \ range(1, 11):\n        subset_size = int(len(x_train) * (i/10))\n    \
+          \    subset_x = x_train.iloc[:subset_size]\n        subset_y = y_train.iloc[:subset_size]\n\
+          \n        classifier.fit(subset_x, subset_y)\n        train_score = classifier.score(subset_x,\
+          \ subset_y)\n\n        # Registrate on TensorBoard\n        try:\n     \
+          \       with file_writer.as_default():\n                tf.summary.scalar('training_accuracy',\
+          \ train_score, step=i)\n                tf.summary.scalar('training_loss',\
+          \ 1.0 - train_score, step=i)\n                tf.summary.scalar('learning_rate',\
+          \ 0.1 / i, step=i)\n\n                # Correcci\xF3n para guardar la figura\
+          \ en TensorBoard\n                feature_importance = np.abs(classifier.coef_[0])\n\
+          \                fig = plt.figure(figsize=(10, 6))\n                ax =\
+          \ fig.add_subplot(111)\n                ax.bar(x_train.columns, feature_importance)\n\
+          \                ax.set_title('Feature Importance')\n                plt.tight_layout()\n\
+          \n                # Convertir figura a imagen para TensorBoard\n       \
+          \         buf = io.BytesIO()\n                plt.savefig(buf, format='png')\n\
+          \                buf.seek(0)\n\n                # Crear imagen para TensorBoard\n\
+          \                image = tf.image.decode_png(buf.getvalue(), channels=4)\n\
+          \                image = tf.expand_dims(image, 0)  # A\xF1adir dimensi\xF3\
+          n de batch\n\n                tf.summary.image('feature_importance', image,\
+          \ step=i)\n                plt.close(fig)\n        except:\n           \
+          \ pass\n\n    classifier.fit(x_train, y_train)\n\n    # Save the trained\
+          \ model\n    joblib.dump(classifier, model_output.path)\n\n    # Log metrics\n\
+          \    train_score = classifier.score(x_train, y_train)\n    metrics_output.log_metric(\"\
+          train_accuracy\", train_score)\n    metrics_output.log_metric(\"model_converged\"\
+          , int(classifier.n_iter_[0] < 500))\n    metrics_output.log_metric(\"num_iterations\"\
+          , int(classifier.n_iter_[0]))\n\n    # Feature importance\n    for i, feature\
+          \ in enumerate(x_train.columns):\n        for j, target in enumerate(np.unique(y_train)):\n\
+          \            metrics_output.log_metric(f\"coef_{feature}_class_{target}\"\
+          , float(classifier.coef_[j, i]))\n\n    print(f\"Model trained with training\
+          \ accuracy: {train_score}\")\n    print(f\"TensorBoard logs saved to: {log_dir}\"\
+          )\n\n"
+        image: python:3.9
+pipelineInfo:
+  description: A simple pipeline to classify Iris flowers with TensorBoard integration.
+  name: iris-pipeline-tensorboard
+root:
+  dag:
+    tasks:
+      evaluate-model:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-evaluate-model
+        dependentTasks:
+        - prepare-tensorboard-logs
+        - train-test-split
+        - training-basic-classifier
+        inputs:
+          artifacts:
+            model:
+              taskOutputArtifact:
+                outputArtifactKey: model_output
+                producerTask: training-basic-classifier
+            tensorboard_log:
+              taskOutputArtifact:
+                outputArtifactKey: tensorboard_log
+                producerTask: prepare-tensorboard-logs
+            x_test:
+              taskOutputArtifact:
+                outputArtifactKey: x_test_output
+                producerTask: train-test-split
+            y_test:
+              taskOutputArtifact:
+                outputArtifactKey: y_test_output
+                producerTask: train-test-split
+        taskInfo:
+          name: evaluate-model
+      prepare-data:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-prepare-data
+        taskInfo:
+          name: prepare-data
+      prepare-tensorboard-logs:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-prepare-tensorboard-logs
+        taskInfo:
+          name: prepare-tensorboard-logs
+      train-test-split:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-train-test-split
+        dependentTasks:
+        - prepare-data
+        inputs:
+          artifacts:
+            input_data:
+              taskOutputArtifact:
+                outputArtifactKey: output_data
+                producerTask: prepare-data
+        taskInfo:
+          name: train-test-split
+      training-basic-classifier:
+        cachingOptions:
+          enableCache: true
+        componentRef:
+          name: comp-training-basic-classifier
+        dependentTasks:
+        - prepare-tensorboard-logs
+        - train-test-split
+        inputs:
+          artifacts:
+            tensorboard_log:
+              taskOutputArtifact:
+                outputArtifactKey: tensorboard_log
+                producerTask: prepare-tensorboard-logs
+            x_train_input:
+              taskOutputArtifact:
+                outputArtifactKey: x_train_output
+                producerTask: train-test-split
+            y_train_input:
+              taskOutputArtifact:
+                outputArtifactKey: y_train_output
+                producerTask: train-test-split
+        taskInfo:
+          name: training-basic-classifier
+schemaVersion: 2.1.0
+sdkVersion: kfp-2.12.1
